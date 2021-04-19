@@ -1,5 +1,7 @@
 # purchases
 
+https://pub.dev/packages/purchases
+
 An extension for the [purchases_flutter](https://pub.dev/packages/purchases_flutter), that allows to get the purchased information for every platform.
 
 ```dart
