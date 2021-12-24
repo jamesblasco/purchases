@@ -11,7 +11,7 @@ class PurchaserInfo extends rc.PurchaserInfo {
     Iterable<MapEntry<dynamic, dynamic>> subscriptions = Map.from(subscriber['subscriptions']).entries;
     Iterable<MapEntry<dynamic, dynamic>> nonSubscriptions = Map.from(subscriber['non_subscriptions']).entries;
     List<MapEntry<dynamic, dynamic>> allProducts = subscriptions.toList() + nonSubscriptions.toList();
-    print(value.toString());
+
     //RevenueCat ask for entitlement here and expect full Entitlement Info object
     //See: entitlement_info_wrapper.dart
     //But REST Api gives limited number of fields.
@@ -45,12 +45,12 @@ class PurchaserInfo extends rc.PurchaserInfo {
         fullEntitlements[entitlementId] = fullEntitlementMap;
       }
     });
-    final activeEntitlements = fullEntitlements.entries.firstWhereOrNull(
+    final activeEntitlement = fullEntitlements.entries.firstWhereOrNull(
       (entry) => entry.value['isActive'] == true,
     );
     map['entitlements'] = {
       'all': fullEntitlements,
-      'active': activeEntitlements ?? {} ,
+      'active': activeEntitlement != null ? {activeEntitlement.key: activeEntitlement.value} : {} ,
     };
 
     final activeSubscriptions = subscriptions.where((item) => DateTime.parse(item.value['expires_date']).isAfter(DateTime.now()));
@@ -83,23 +83,8 @@ class PurchaserInfo extends rc.PurchaserInfo {
     map['managementURL'] = subscriber['management_url'];
     // Since I'm in the plugin domain and have no info about the app, I can populate it
 
-    return PurchaserInfo.fromRest(map);
+    return PurchaserInfo._(map);
   }
 
-  factory PurchaserInfo.empty() {
-    return PurchaserInfo.fromJson({
-      'subscriber': {
-        "entitlements": {},
-        "first_seen": "2019-02-21T00:08:41Z",
-        "non_subscriptions": {},
-        "original_app_user_id": "XXX-XXXXX-XXXXX-XX",
-        "original_application_version": "1.0",
-        "other_purchases": {},
-        "subscriptions": {}
-      },
-      'request_date': DateTime.now().toIso8601String()
-    });
-  }
-
-  PurchaserInfo.fromRest(Map<dynamic, dynamic> map) : super.fromJson(map);
+  PurchaserInfo._(Map<dynamic, dynamic> map) : super.fromJson(map);
 }

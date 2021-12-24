@@ -83,11 +83,12 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            ValueListenableBuilder(
-                valueListenable: Purchases.purchaserInfo,
-                builder: (context, value, widget) {
+            StreamBuilder(
+                stream: Purchases.purchaserInfo,
+                builder: (context, snapshot) {
+                  final info = snapshot.data;
                   return Text(
-                    value.toString(),
+                    info.toString(),
                   );
                 }),
             Text(
@@ -106,5 +107,11 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Icon(Icons.add),
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    Purchases.dispose();
   }
 }

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:purchases_flutter/purchases_flutter.dart' as rc;
+import 'package:rxdart/subjects.dart';
 import 'models/purchaser_info.dart';
 
 export 'package:purchases_flutter/purchases_flutter.dart' hide Purchases;
@@ -24,7 +25,8 @@ class Purchases {
 
   static const List<TargetPlatform> sdkSupportedPlatforms = [TargetPlatform.android, TargetPlatform.iOS, TargetPlatform.macOS];
 
-  static final bool supportsSDK = sdkSupportedPlatforms.contains(defaultTargetPlatform) && !kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST');
+  static final bool supportsSDK =
+      sdkSupportedPlatforms.contains(defaultTargetPlatform) && !kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST');
 
   static String? _userId;
   static String? get userId => _userId!;
@@ -34,23 +36,31 @@ class Purchases {
     _updateUserId();
   }
 
-  static late ValueNotifier<rc.PurchaserInfo> _purchaserInfo = _initPurchasesInfo();
+  static late StreamController<rc.PurchaserInfo> _purchaserInfo = _initPurchasesInfo();
 
-  static ValueNotifier<rc.PurchaserInfo> _initPurchasesInfo() {
+  static BehaviorSubject<rc.PurchaserInfo> _initPurchasesInfo() {
     _setupPurchasesInfo();
-    return ValueNotifier<rc.PurchaserInfo>(PurchaserInfo.empty());
+    // Need to use BehaviorSubject here to cache the latest value 
+    return BehaviorSubject();
   }
+
+  static Function(rc.PurchaserInfo) purchasesInfoListener = (purchaserInfo) {
+    _purchaserInfo.add(purchaserInfo);
+  };
 
   static void _setupPurchasesInfo() async {
     assert(_apiKey != null);
     if (supportsSDK) {
       await _setupFuture;
-      rc.Purchases.addPurchaserInfoUpdateListener((purchaserInfo) {
-        _purchaserInfo.value = purchaserInfo;
-      });
+      rc.Purchases.addPurchaserInfoUpdateListener(purchasesInfoListener);
     } else {
       await _getPurchaseInfo();
     }
+  }
+
+  static void dispose() {
+    rc.Purchases.removePurchaserInfoUpdateListener(purchasesInfoListener);
+    _purchaserInfo.close();
   }
 
   static void _updateUserId() {
@@ -63,10 +73,9 @@ class Purchases {
     } else {
       _getPurchaseInfo();
     }
-    _purchaserInfo.value = PurchaserInfo.empty();
   }
 
-  static ValueListenable<rc.PurchaserInfo> get purchaserInfo => _purchaserInfo;
+  static Stream<rc.PurchaserInfo> get purchaserInfo => _purchaserInfo.stream;
 
   static Future<rc.PurchaserInfo> _getPurchaseInfo() async {
     assert(_apiKey != null, 'Needs to provide a useful key');
@@ -81,7 +90,7 @@ class Purchases {
       throw Exception('${response.statusCode}, message ${response.body}');
     }
     final info = PurchaserInfo.fromJson(jsonDecode(response.body));
-    _purchaserInfo.value = info;
+    _purchaserInfo.add(info);
     return info;
   }
 
