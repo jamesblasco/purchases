@@ -2,13 +2,13 @@ library purchases;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:purchases_flutter/purchases_flutter.dart' as rc;
-
 import 'models/purchaser_info.dart';
+
 export 'package:purchases_flutter/purchases_flutter.dart' hide Purchases;
 
 class Purchases {
@@ -22,14 +22,9 @@ class Purchases {
 
   static late Future? _setupFuture;
 
-  static const List<TargetPlatform> sdkSupportedPlatforms = [
-    TargetPlatform.android,
-    TargetPlatform.iOS,
-    TargetPlatform.macOS
-  ];
+  static const List<TargetPlatform> sdkSupportedPlatforms = [TargetPlatform.android, TargetPlatform.iOS, TargetPlatform.macOS];
 
-  static final bool supportsSDK =
-      sdkSupportedPlatforms.contains(defaultTargetPlatform);
+  static final bool supportsSDK = sdkSupportedPlatforms.contains(defaultTargetPlatform) && !kIsWeb && !Platform.environment.containsKey('FLUTTER_TEST');
 
   static String? _userId;
   static String? get userId => _userId!;
@@ -39,8 +34,7 @@ class Purchases {
     _updateUserId();
   }
 
-  static late ValueNotifier<rc.PurchaserInfo> _purchaserInfo =
-      _initPurchasesInfo();
+  static late ValueNotifier<rc.PurchaserInfo> _purchaserInfo = _initPurchasesInfo();
 
   static ValueNotifier<rc.PurchaserInfo> _initPurchasesInfo() {
     _setupPurchasesInfo();
@@ -62,9 +56,9 @@ class Purchases {
   static void _updateUserId() {
     if (supportsSDK) {
       if (userId == null) {
-        rc.Purchases.reset();
+        rc.Purchases.logOut();
       } else {
-        rc.Purchases.identify(userId!);
+        rc.Purchases.logIn(userId!);
       }
     } else {
       _getPurchaseInfo();
@@ -76,17 +70,17 @@ class Purchases {
 
   static Future<rc.PurchaserInfo> _getPurchaseInfo() async {
     assert(_apiKey != null, 'Needs to provide a useful key');
-    if (_userId == null) return PurchaserInfo.empty();
-    final url = 'https://api.revenuecat.com/v1/subscribers/app_user_id';
+    if (_userId == null) return Future.error('user id must not be null');
+    final url = 'https://api.revenuecat.com/v1/subscribers/$userId';
     final response = await http.get(Uri.parse(url), headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer $apiKey'
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $apiKey',
     });
     if (response.statusCode != 200) {
       throw Exception('${response.statusCode}, message ${response.body}');
     }
-    final json = jsonDecode(response.body)['subscriber'];
-    final info = PurchaserInfo.fromJson(json);
+    final info = PurchaserInfo.fromJson(jsonDecode(response.body));
     _purchaserInfo.value = info;
     return info;
   }
@@ -131,8 +125,7 @@ class Purchases {
   /// [type] If the products are Android INAPPs, this needs to be
   /// PurchaseType.INAPP otherwise the products won't be found.
   /// PurchaseType.Subs by default. This parameter only has effect in Android.
-  static Future<List<rc.Product>> getProducts(List<String> productIdentifiers,
-      {rc.PurchaseType type = rc.PurchaseType.subs}) {
+  static Future<List<rc.Product>> getProducts(List<String> productIdentifiers, {rc.PurchaseType type = rc.PurchaseType.subs}) {
     return rc.Purchases.getProducts(productIdentifiers, type: type);
   }
 
@@ -152,10 +145,8 @@ class Purchases {
   /// PurchaseType.INAPP otherwise the product won't be found.
   /// PurchaseType.Subs by default. This parameter only has effect in Android.
   static Future<rc.PurchaserInfo> purchaseProduct(String productIdentifier,
-      {rc.UpgradeInfo? upgradeInfo,
-      rc.PurchaseType type = rc.PurchaseType.subs}) {
-    return rc.Purchases.purchaseProduct(productIdentifier,
-        upgradeInfo: upgradeInfo, type: type);
+      {rc.UpgradeInfo? upgradeInfo, rc.PurchaseType type = rc.PurchaseType.subs}) {
+    return rc.Purchases.purchaseProduct(productIdentifier, upgradeInfo: upgradeInfo, type: type);
   }
 
   /// Makes a purchase. Returns a [PurchaserInfo] object. Throws a
@@ -168,10 +159,8 @@ class Purchases {
   ///
   /// [upgradeInfo] Android only. Optional UpgradeInfo you wish to upgrade from
   /// containing the oldSKU and the optional prorationMode.
-  static Future<rc.PurchaserInfo> purchasePackage(rc.Package packageToPurchase,
-      {rc.UpgradeInfo? upgradeInfo}) async {
-    return rc.Purchases.purchasePackage(packageToPurchase,
-        upgradeInfo: upgradeInfo);
+  static Future<rc.PurchaserInfo> purchasePackage(rc.Package packageToPurchase, {rc.UpgradeInfo? upgradeInfo}) async {
+    return rc.Purchases.purchasePackage(packageToPurchase, upgradeInfo: upgradeInfo);
   }
 
   /// iOS only. Purchase a product applying a given discount.
@@ -186,8 +175,7 @@ class Purchases {
   ///
   /// [paymentDiscount] Discount to apply to the product. Retrieve this discount
   /// using [getPaymentDiscount].
-  static Future<rc.PurchaserInfo> purchaseDiscountedProduct(
-      rc.Product product, rc.PaymentDiscount discount) async {
+  static Future<rc.PurchaserInfo> purchaseDiscountedProduct(rc.Product product, rc.PaymentDiscount discount) async {
     return rc.Purchases.purchaseDiscountedProduct(product, discount);
   }
 
@@ -203,8 +191,7 @@ class Purchases {
   ///
   /// [paymentDiscount] Discount to apply to the product. Retrieve this discount
   /// using [getPaymentDiscount].
-  static Future<rc.PurchaserInfo> purchaseDiscountedPackage(
-      rc.Package packageToPurchase, rc.PaymentDiscount discount) async {
+  static Future<rc.PurchaserInfo> purchaseDiscountedPackage(rc.Package packageToPurchase, rc.PaymentDiscount discount) async {
     return rc.Purchases.purchaseDiscountedPackage(packageToPurchase, discount);
   }
 
@@ -238,19 +225,19 @@ class Purchases {
   /// More information: http://errors.rev.cat/ask-to-buy
   ///
   static Future<void> setSimulatesAskToBuyInSandbox(bool enabled) async {
- return rc.Purchases.setDebugLogsEnabled(enabled);
+    return rc.Purchases.setDebugLogsEnabled(enabled);
   }
 
   ///
   /// Set this property to your proxy URL before configuring Purchases *only* if you've received a proxy key value from your RevenueCat contact.
   ///
   static Future<void> setProxyURL(String url) async {
-     return rc.Purchases.setProxyURL(url);
+    return rc.Purchases.setProxyURL(url);
   }
 
   /// Gets current purchaser info, which will normally be cached.
   static Future<rc.PurchaserInfo> getPurchaserInfo() async {
-     return rc.Purchases.getPurchaserInfo();
+    return rc.Purchases.getPurchaserInfo();
   }
 
   ///  This method will send all the purchases to the RevenueCat backend.
@@ -261,13 +248,12 @@ class Purchases {
   ///  This method should be called anytime a sync is needed, like after a
   ///  successful purchase.
   static Future<void> syncPurchases() async {
-     return rc.Purchases.syncPurchases();
+    return rc.Purchases.syncPurchases();
   }
 
   /// iOS only. Enable automatic collection of Apple Search Ad attribution. Disabled by
   /// default
-  static Future<void> setAutomaticAppleSearchAdsAttributionCollection(
-      bool enabled) async {
+  static Future<void> setAutomaticAppleSearchAdsAttributionCollection(bool enabled) async {
     return rc.Purchases.setDebugLogsEnabled(enabled);
   }
 
@@ -292,10 +278,8 @@ class Purchases {
   /// Android always returns introEligibilityStatusUnknown.
   ///
   /// [productIdentifiers] Array of product identifiers
-  static Future<Map<String, rc.IntroEligibility>>
-      checkTrialOrIntroductoryPriceEligibility(
-          List<String> productIdentifiers) async {
- return rc.Purchases.checkTrialOrIntroductoryPriceEligibility(productIdentifiers);
+  static Future<Map<String, rc.IntroEligibility>> checkTrialOrIntroductoryPriceEligibility(List<String> productIdentifiers) async {
+    return rc.Purchases.checkTrialOrIntroductoryPriceEligibility(productIdentifiers);
   }
 
   /// Invalidates the cache for purchaser information.
@@ -307,14 +291,14 @@ class Purchases {
   /// This is useful for cases where purchaser information might have been updated outside of the app, like if a
   /// promotional subscription is granted through the RevenueCat dashboard.
   static Future<void> invalidatePurchaserInfoCache() async {
-     return rc.Purchases.invalidatePurchaserInfoCache();
+    return rc.Purchases.invalidatePurchaserInfoCache();
   }
 
   /// iOS only. Presents a code redemption sheet, useful for redeeming offer codes
   /// Refer to https://docs.revenuecat.com/docs/ios-subscription-offers#offer-codes for more information on how
   /// to configure and use offer codes
   static Future<void> presentCodeRedemptionSheet() async {
- return rc.Purchases.presentCodeRedemptionSheet();
+    return rc.Purchases.presentCodeRedemptionSheet();
   }
 
   ///================================================================================
@@ -330,7 +314,7 @@ class Purchases {
   ///
   /// [attributes] Map of attributes by key. Set the value as an empty string to delete an attribute.
   static Future<void> setAttributes(Map<String, String> attributes) async {
-     return rc.Purchases.setAttributes(attributes);
+    return rc.Purchases.setAttributes(attributes);
   }
 
   /// Subscriber attribute associated with the email address for the user
@@ -351,14 +335,14 @@ class Purchases {
   ///
   /// [displayName] Empty String or null will delete the subscriber attribute.
   static Future<void> setDisplayName(String displayName) async {
-     return rc.Purchases.setDisplayName(displayName);
+    return rc.Purchases.setDisplayName(displayName);
   }
 
   /// Subscriber attribute associated with the push token for the user
   ///
   /// [pushToken] Empty String or null will delete the subscriber attribute.
   static Future<void> setPushToken(String pushToken) async {
- return rc.Purchases.setPushToken(pushToken);
+    return rc.Purchases.setPushToken(pushToken);
   }
 
   /// Subscriber attribute associated with the Adjust Id for the user
@@ -366,7 +350,7 @@ class Purchases {
   ///
   /// [adjustID] Empty String or null will delete the subscriber attribute.
   static Future<void> setAdjustID(String adjustID) async {
- return rc.Purchases.setAdjustID(adjustID);
+    return rc.Purchases.setAdjustID(adjustID);
   }
 
   /// Subscriber attribute associated with the Appsflyer Id for the user
@@ -382,7 +366,7 @@ class Purchases {
   ///
   /// [fbAnonymousID] Empty String or null will delete the subscriber attribute.
   static Future<void> setFBAnonymousID(String fbAnonymousID) async {
-     return rc.Purchases.setFBAnonymousID(fbAnonymousID);
+    return rc.Purchases.setFBAnonymousID(fbAnonymousID);
   }
 
   /// Subscriber attribute associated with the mParticle Id for the user
@@ -390,7 +374,7 @@ class Purchases {
   ///
   /// [mparticleID] Empty String or null will delete the subscriber attribute.
   static Future<void> setMparticleID(String mparticleID) async {
-   return rc.Purchases.setMparticleID(mparticleID);
+    return rc.Purchases.setMparticleID(mparticleID);
   }
 
   /// Subscriber attribute associated with the OneSignal Player Id for the user
@@ -398,14 +382,14 @@ class Purchases {
   ///
   /// [onesignalID] Empty String or null will delete the subscriber attribute.
   static Future<void> setOnesignalID(String onesignalID) async {
- return rc.Purchases.setOnesignalID(onesignalID);
+    return rc.Purchases.setOnesignalID(onesignalID);
   }
 
   /// Subscriber attribute associated with the install media source for the user
   ///
   /// [mediaSource] Empty String or null will delete the subscriber attribute.
   static Future<void> setMediaSource(String mediaSource) async {
-     return rc.Purchases.setMediaSource(mediaSource);
+    return rc.Purchases.setMediaSource(mediaSource);
   }
 
   /// Subscriber attribute associated with the install campaign for the user
@@ -461,8 +445,7 @@ class Purchases {
   /// [product] The `Product` the user intends to purchase.
   ///
   /// [discount] The `Discount` to apply to the product.
-  static Future<rc.PaymentDiscount> getPaymentDiscount(
-      rc.Product product, rc.Discount discount) async {
-     return rc.Purchases.getPaymentDiscount(product, discount);
+  static Future<rc.PaymentDiscount> getPaymentDiscount(rc.Product product, rc.Discount discount) async {
+    return rc.Purchases.getPaymentDiscount(product, discount);
   }
 }

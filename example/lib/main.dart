@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:purchases/purchases.dart';
-import '.env.dart';
+import '.env.example.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
